@@ -136,12 +136,21 @@ let
     else throw "FAIL: ${what} payload main is '${e.got}', expected '${e.want}'")
     (lib.attrNames wantMain);
 
+  # Spelled out rather than re-derived: an expectation computed the same way
+  # the implementation computes it agrees with any implementation, including a
+  # broken one.
+  wantEmbedDir = {
+    ios-arm64 = "Frameworks";
+    ios-sim-arm64 = "Frameworks";
+    android-arm64 = "lib";
+  };
+
   embedDirOk = lib.all (t:
-    let want = if lib.hasPrefix "ios" t then "Frameworks" else "lib";
+    let want = wantEmbedDir.${t};
         got = mobileCatalog.embedDirFor t; in
     if got == want then true
     else throw "FAIL: embedDirFor ${t} is '${got}', expected '${want}'")
-    [ "ios-arm64" "ios-sim-arm64" "android-arm64" ];
+    (lib.attrNames wantEmbedDir);
 
   variantMapOk =
     let want = { aarch64-ios = "ios-arm64"; aarch64-ios-simulator = "ios-sim-arm64"; aarch64-android = "android-arm64"; };

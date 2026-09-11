@@ -114,7 +114,7 @@ let
       main = if ios then "Frameworks/${stem}.framework/${stem}" else "lib/lib${stem}.so";
       copyExtra = rel: file: ''
         mkdir -p "$out/$(dirname ${lib.escapeShellArg rel})"
-        cp ${file} $out/${rel}
+        cp ${file} "$out/${rel}"
       '';
     in
     {
@@ -143,7 +143,7 @@ let
     { name
     , version
     , type ? "core"
-    , description ? "${name}"
+    , description ? name
     , author ? "Logos"
     , category ? "misc"
     , dependencies ? [ ]
