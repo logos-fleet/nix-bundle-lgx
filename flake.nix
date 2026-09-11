@@ -442,5 +442,52 @@
           # Produce a dual-variant package containing both portable and dev variants.
           dual = mkLgxBundle { mode = "dual"; };
         });
+
+      # Publishing a MOBILE variant is a library call, not a bundler.
+      #
+      # A nix bundler is `drv -> drv` and takes no arguments, so it cannot be
+      # told which of three cross targets a derivation was built for -- and
+      # `pkgs.stdenv.hostPlatform` under an iOS cross set answers "darwin",
+      # which is the desktop variant name and the wrong one. The caller is the
+      # only thing that knows it just built
+      # `packages.aarch64-ios-simulator.bare`, so the caller names the target.
+      #
+      # Keyed by the system the PUBLISHER runs on. Everything in here moves and
+      # hashes bytes that are already cross-compiled; nothing in it is built
+      # for the phone.
+      lib = forAllSystems (args@{ pkgs, ... }:
+        let
+          repoLgx = args.lgx;
+          # For a cross target (x86_64-windows) `pkgs` is the target set, and
+          # the publisher's tools have to run on the builder either way.
+          buildPkgs = pkgs.pkgsBuildBuild;
+        in
+        rec {
+          # `lgx` is an argument because a consumer that also ships lgx in its
+          # own closure must publish with THAT one: the manifest version and
+          # the Merkle layout are the tool's, and a package written by one lgx
+          # and admitted by another is two implementations agreeing by luck.
+          mkMobileCatalog = { lgx ? repoLgx }:
+            import ./lib/mobile-catalog.nix { pkgs = buildPkgs; inherit lgx; };
+
+          mobileCatalog = mkMobileCatalog { };
+        });
+
+      # Not `forAllSystems`: that adds the x86_64-windows pseudo-system, whose
+      # entry would be a build-platform derivation wearing a Windows key --
+      # `nix flake check` would build the same thing twice and call one of them
+      # a Windows check.
+      checks = logos-nix.lib.forAllSystems ({ system, pkgs }: {
+        mobile-catalog = import ./tests/mobile-catalog.nix {
+          inherit pkgs;
+          lgx = logos-package.packages.${system}.lgx;
+          mobileCatalog = self.lib.${system}.mobileCatalog;
+          testKey = {
+            name = "nix-bundle-lgx-test";
+            jwk = ./tests/keys/nix-bundle-lgx-test.jwk;
+            did = nixpkgs.lib.fileContents ./tests/keys/nix-bundle-lgx-test.did;
+          };
+        };
+      });
     };
 }

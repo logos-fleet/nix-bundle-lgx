@@ -66,3 +66,86 @@ $out/
     libfoo.dylib   # or libfoo.so
   metadata.json    # optional
 ```
+
+## Mobile variants: `lib.<system>.mobileCatalog`
+
+A bundler cannot publish a phone. `nix bundle` hands the bundler a derivation
+and nothing else, so there is no way to say *which* of `aarch64-ios`,
+`aarch64-ios-simulator` or `aarch64-android` a cross-built artifact is for —
+and `pkgs.stdenv.hostPlatform` under an iOS cross set answers "darwin", which
+is the desktop variant name and the wrong one.
+
+So mobile publishing is a **library**: the caller names the target, because the
+caller is the only thing that knows which output it just built. Everything in
+it runs on the builder over bytes that are already cross-compiled.
+
+```nix
+let
+  publish = nix-bundle-lgx.lib.${buildSystem}.mkMobileCatalog {
+    # Optional. Pass your own lgx when your closure already ships one: a
+    # package written by one lgx and admitted by another is two
+    # implementations agreeing by luck.
+    inherit lgx;
+  };
+
+  payload = publish.mkVariantPayload {
+    drv = myModule.packages.aarch64-ios-simulator.bare;   # or .mobile.<sys>.bare
+    stem = "my_module_bare";
+    target = "ios-sim-arm64";
+  };
+
+  pkg = publish.mkPackage {
+    name = "my_module";
+    version = "1.0.0";
+    type = "core";
+    dependencies = [ ];
+    variants.ios-sim-arm64 = payload;
+    signingKey = { name = "release"; jwk = /keys/release.jwk; };
+  };
+
+  catalog = publish.mkCatalog {
+    release = "2026.1";
+    signers = [ "did:jwk:..." ];          # the ONLY DIDs a member may carry
+    packages = [ { spec = …; drv = pkg; } ];
+  };
+
+  # The artifact a consumer FETCHES: the same index with every member's
+  # sha256 and Merkle root filled in.
+  release = publish.mkRelease {
+    inherit catalog;
+    baseUrl = "https://github.com/org/repo/releases/download/2026.1";
+  };
+in release
+```
+
+| Function | Takes | Produces |
+|---|---|---|
+| `mkVariantPayload` | a `logos-module-builder` mobile artifact, a `stem`, a `target` | `{ main; payload; }` — the image restaged in the layout the target's loader wants |
+| `mkPackage` | name/version/type/dependencies/`variants`/`signingKey` | `$out/<name>.lgx`, signed and `lgx verify`-clean |
+| `mkCatalog` | `release`, `signers`, the packages | `{ index; root; }` — `index` is a **Nix value**, `root` a directory with `packages/` and `index.json` |
+| `mkRelease` | a catalog, an optional `baseUrl` | `$out/index.json` + `packages/`, every entry carrying `sha256` and `rootHash` |
+
+### Variant names and payload layout
+
+| Nix pseudo-system | LGX variant | Payload layout | Embedded in the app under |
+|---|---|---|---|
+| `aarch64-ios` | `ios-arm64` | `Frameworks/<stem>.framework/<stem>` | `Frameworks/` |
+| `aarch64-ios-simulator` | `ios-sim-arm64` | `Frameworks/<stem>.framework/<stem>` | `Frameworks/` |
+| `aarch64-android` | `android-arm64` | `lib/lib<stem>.so` | `lib/` |
+
+`variantForSystem`, `systemForVariant` and `embedDirFor` are exposed so a
+consumer resolves the same mapping rather than restating it. The payload is
+laid out for the **app**, not for the package, so assembling a set out of the
+extracted variants is a copy and never a second re-layout that could disagree
+with the manifest's `main`.
+
+### Why `mkRelease` is separate
+
+`mkCatalog`'s index is a Nix value on purpose: names, versions, dependencies
+and which variants exist are all known at eval, so a consumer can refuse
+"module X ships no `ios-sim-arm64`" *before* a cross toolchain runs. What is
+**not** knowable at eval is a Merkle root or a sha256 — those exist only once
+the archive does. `mkRelease` computes them in a derivation and writes them
+into an `index.json` that a consumer reads as **data it fetched**, not as a
+derivation it built. That file is what turns "trust this path" into a
+fixed-output fetch that cannot resolve to different bytes.
