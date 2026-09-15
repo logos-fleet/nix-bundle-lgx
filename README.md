@@ -121,7 +121,7 @@ in release
 | Function | Takes | Produces |
 |---|---|---|
 | `mkVariantPayload` | a `logos-module-builder` mobile artifact, a `stem`, a `target` | `{ main; payload; }` — the image restaged in the layout the target's loader wants |
-| `mkPackage` | name/version/type/dependencies/`variants`/`signingKey` | `$out/<name>.lgx`, signed and `lgx verify`-clean |
+| `mkPackage` | name/version/type/dependencies/`platform`/`variants`/`signingKey` | `$out/<name>.lgx`, signed and `lgx verify`-clean |
 | `mkCatalog` | `release`, `signers`, the packages | `{ index; root; }` — `index` is a **Nix value**, `root` a directory with `packages/` and `index.json` |
 | `mkRelease` | a catalog, an optional `baseUrl` | `$out/index.json` + `packages/`, every entry carrying `sha256` and `rootHash` |
 
@@ -138,6 +138,21 @@ consumer resolves the same mapping rather than restating it. The payload is
 laid out for the **app**, not for the package, so assembling a set out of the
 extracted variants is a copy and never a second re-layout that could disagree
 with the manifest's `main`.
+
+### `platform`: the flag a consumer derives a floor from
+
+`platform = true` is ADR 0009's declaration that a module owns access a webview
+cannot give it — a socket, a keystore, a radio — so it ships no `web` variant
+and a Downloaded module reaches what it owns by *calling* it. It is read off the
+module's own `metadata.json` by the caller and never decided here.
+
+It travels in the **index**, not in the signed manifest, because the consumer of
+the fact is a build: logos-basecamp's `nix/platform-floor.nix` derives a shell's
+Platform floor from this index and that shell's own Bundled closure, at eval,
+before any cross toolchain runs. A manifest field would have to be unpacked from
+an archive to be read, which is the import-from-derivation this library is
+shaped to avoid. Absent means `false`, which is the safe direction: an unflagged
+module is judged by the variant rule alone.
 
 ### Why `mkRelease` is separate
 
