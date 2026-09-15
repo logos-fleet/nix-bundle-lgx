@@ -86,6 +86,11 @@ let
       type = "core";
       category = "testing";
       description = "A core module published for two mobile targets";
+      # ADR 0009's Platform flag. A consumer derives a shell's floor from this
+      # and its own Bundled closure (logos-basecamp's nix/platform-floor.nix),
+      # so an index that dropped it would silently make every Platform module
+      # look like an ordinary one.
+      platform = true;
       dependencies = [ ];
       variants = {
         ios-sim-arm64 = barePayload;
@@ -260,6 +265,11 @@ pkgs.runCommand "mobile-catalog-tests"
   assert sorted(by["fixture_core"]["variants"]) == ["android-arm64", "ios-sim-arm64"]
   assert by["fixture_ui"]["variants"]["ios-sim-arm64"]["view"] == "qml/Main.qml"
   assert by["fixture_ui"]["dependencies"] == ["fixture_core"]
+  # The Platform flag, both ways round: declared, and defaulted to false for a
+  # package that says nothing. False is the safe default -- an unflagged module
+  # is judged by the variant rule alone, exactly as it was before the flag.
+  assert by["fixture_core"]["platform"] is True, by["fixture_core"]
+  assert by["fixture_ui"]["platform"] is False, by["fixture_ui"]
   for p in index["packages"]:
       assert os.path.exists(os.path.join(root, p["file"])), p
       # An unpublished catalog pins nothing: the bytes are wherever `file`
