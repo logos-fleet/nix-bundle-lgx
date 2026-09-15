@@ -147,6 +147,18 @@ let
     , author ? "Logos"
     , category ? "misc"
     , dependencies ? [ ]
+    , # ADR 0009: this module owns access a webview cannot give it -- a socket, a
+      # keystore, a radio -- so it has no `web` variant and a Downloaded module
+      # reaches what it owns by CALLING it. Read off the module's own
+      # metadata.json (`"platform": true`) by the caller, never decided here.
+      #
+      # It travels in the catalog INDEX rather than in the signed manifest,
+      # because the consumer of the fact is a BUILD: nix/platform-floor.nix in
+      # logos-basecamp derives a shell's floor from the index and its own
+      # Bundled closure, at eval, before any cross toolchain runs. A manifest
+      # field would have to be unpacked from an archive to be read, which is the
+      # import-from-derivation this whole library is shaped to avoid.
+      platform ? false
     , view ? null
     , icon ? null
     , variants
@@ -212,6 +224,10 @@ let
       entry = { spec, ... }: {
         inherit (spec) name version;
         type = spec.type or "core";
+        # ADR 0009's Platform flag, verbatim. A consumer's floor is derived from
+        # this and from its own Bundled closure, so an index that dropped it
+        # would silently make every Platform module look like an ordinary one.
+        platform = spec.platform or false;
         dependencies = spec.dependencies or [ ];
         variants = lib.mapAttrs (_: v: { inherit (v) main; } //
           lib.optionalAttrs (spec ? view && spec.view != null) { inherit (spec) view; })
